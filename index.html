@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f5ed"><title>MINTLY</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--ink:#23352d;--muted:#718078;--green:#557b62;--pale:#edf2e9;--paper:#fbfbf7;--line:#e4e8df;--red:#a54d43}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+button,input,select{font:inherit}button{cursor:pointer;border:0;border-radius:12px;padding:11px 15px;background:var(--green);color:white;font-weight:650}
+button.secondary{background:var(--pale);color:var(--ink)}button.danger{background:#f8e9e6;color:var(--red)}
+input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:white;color:var(--ink)}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
+.wrap{max-width:900px;margin:auto;padding:22px 18px 90px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:24px}
+.brand{font-size:25px;font-weight:850;letter-spacing:2px;color:var(--green)}.sub{color:var(--muted);font-size:13px}
+.panel{background:white;border:1px solid var(--line);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 4px 18px #263a2c08}
+h1,h2,h3{margin:0 0 10px}h1{font-size:25px}h2{font-size:18px}h3{font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stat{background:var(--pale);border-radius:14px;padding:14px}.stat b{display:block;font-size:22px;margin-top:4px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tabs{display:flex;gap:7px;flex-wrap:wrap;margin:18px 0}.tabs button{background:transparent;color:var(--muted);border:1px solid var(--line)}.tabs button.active{background:var(--green);color:white;border-color:var(--green)}
+.hidden{display:none!important}.item{padding:12px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}.small{font-size:12px;color:var(--muted)}
+form .actions{margin-top:15px}.notice{padding:10px 12px;border-radius:12px;background:var(--pale);font-size:13px;margin:12px 0}.notice.warn{background:#fff2df;color:#815b25}.notice.err{background:#f8e9e6;color:var(--red)}
+.auth{max-width:420px;margin:7vh auto}.spacebar{display:flex;gap:8px;align-items:center}.spacebar select{max-width:230px}
+@media(max-width:560px){.grid{grid-template-columns:1fr 1fr}.wrap{padding:17px 13px 90px}.top{align-items:flex-start}.spacebar{flex-direction:column;align-items:flex-end}.spacebar select{max-width:170px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="brand">MINTLY</div><div class="sub">A little more clarity, every day.</div></div><div id="accountTop" class="hidden"><div class="spacebar"><select id="spaceSelect" aria-label="Choose space"></select><button class="secondary" id="signOut">Sign out</button></div><div class="small" id="syncState" style="text-align:right;margin-top:5px">Not connected</div></div></div>
+  <section id="auth" class="panel auth">
+    <h1>Welcome to MINTLY</h1><p class="sub">Sign in or create your account to keep your information safely synced.</p>
+    <div class="tabs"><button class="active" id="loginMode">Sign in</button><button id="signupMode">Create account</button></div>
+    <form id="authForm"><label>Email</label><input id="email" type="email" required autocomplete="email"><label>Password</label><input id="password" type="password" minlength="8" required autocomplete="current-password"><div class="actions"><button id="authSubmit">Sign in</button></div></form>
+    <div id="authMsg" class="small"></div>
+  </section>
+  <main id="app" class="hidden">
+    <div class="row"><div><h1 id="hello">Your overview</h1><div class="sub" id="spaceDescription">Your space</div></div><button class="secondary" id="newHousehold">+ New household</button></div>
+    <div class="notice" id="privacyNote">Personal space: only you can access this information.</div>
+    <nav class="tabs"><button class="active" data-tab="overview">Overview</button><button data-tab="money">Money</button><button data-tab="essentials">Essentials</button><button data-tab="household">Household</button></nav>
+    <section id="overview" class="tabview">
+      <div class="grid"><div class="stat"><span class="small">Income</span><b id="totalIncome">0</b></div><div class="stat"><span class="small">Expenses</span><b id="totalExpense">0</b></div><div class="stat"><span class="small">Balance</span><b id="balance">0</b></div><div class="stat"><span class="small">Essentials tracked</span><b id="itemCount">0</b></div></div>
+      <div class="panel"><h2>Recent activity</h2><div id="recent" class="sub">Nothing here yet.</div></div>
+    </section>
+    <section id="money" class="tabview hidden">
+      <div class="panel"><h2>Add a transaction</h2><form id="txForm"><div class="grid"><div><label>Type</label><select id="txType"><option value="expense">Expense</option><option value="income">Income</option></select></div><div><label>Amount</label><input id="txAmount" type="number" min="0.01" step="0.01" required></div></div><label>Description</label><input id="txDescription" required placeholder="Groceries, salary..."><label>Category</label><input id="txCategory" placeholder="General"><div class="actions"><button>Add transaction</button></div></form></div>
+      <div class="panel"><h2>Transactions</h2><div id="transactions"></div></div>
+    </section>
+    <section id="essentials" class="tabview hidden">
+      <div class="panel"><h2>Add an essential</h2><form id="itemForm"><label>Item name</label><input id="itemName" required placeholder="Cooking oil"><div class="grid"><div><label>Estimated cost</label><input id="itemCost" type="number" min="0" step=".01" value="0"></div><div><label>Restock every (days)</label><input id="itemDays" type="number" min="1" value="30"></div></div><label>Last purchased</label><input id="itemDate" type="date"><div class="actions"><button>Add essential</button></div></form></div>
+      <div class="panel"><h2>Your essentials</h2><div id="essentialsList"></div></div>
+    </section>
+    <section id="household" class="tabview hidden">
+      <div class="panel"><h2>Household members</h2><p class="sub">Shared-space members can see and manage records in this household, subject to their role. Personal-space records stay private.</p><div id="members"></div></div>
+      <div class="panel"><h2>Invite someone</h2><p class="small">Invitations are sent by a secure server function. Configure it before using this feature.</p><form id="inviteForm"><label>Email address</label><input id="inviteEmail" type="email" required><label>Permission</label><select id="inviteRole"><option value="editor">Can edit shared records</option><option value="viewer">Can view shared records</option></select><div class="actions"><button>Send invitation</button></div></form><div id="inviteMsg" class="small"></div></div>
+    </section>
+  </main>
+  <div id="toast" class="small" role="status"></div>
+</div>
+<script type="module" src="app.js"></script>
+</body></html>

@@ -1,0 +1,9 @@
+{
+  "name": "MINTLY",
+  "short_name": "MINTLY",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fbfbf7",
+  "theme_color": "#f5f5ed",
+  "icons": []
+}
