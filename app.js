@@ -92,62 +92,101 @@ async function loadRates(force = false) {
     Date.now() - cached.savedAt < RATE_CACHE_MAX_AGE
   ) {
     currentRates = cached.rates;
-    currentRateDate = cached.date;
+    currentRateDate = cached.date || null;
     return;
   }
 
   if (!navigator.onLine) {
     if (hasUsableRates(cached?.rates)) {
       currentRates = cached.rates;
-      currentRateDate = cached.date;
+      currentRateDate = cached.date || null;
+      return;
     }
+    throw new Error("You're offline and no complete exchange-rate table is saved yet. Connect once to load currencies.");
+  }
+
+  const sources = [
+    async () => {
+      const response = await fetch("https://open.er-api.com/v6/latest/USD", {
+        cache: "no-store"
+      });
+      if (!response.ok) throw new Error("Primary rate service returned HTTP " + response.status);
+      const result = await response.json();
+      if (result.result !== "success" || result.base_code !== "USD") {
+        throw new Error("Primary rate service returned an invalid response");
+      }
+      return {
+        rates: result.rates,
+        date: result.time_last_update_utc || null
+      };
+    },
+    async () => {
+      const urls = [
+        "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+        "https://latest.currency-api.pages.dev/v1/currencies/usd.json"
+      ];
+      let lastError;
+      for (const url of urls) {
+        try {
+          const response = await fetch(url, { cache: "no-store" });
+          if (!response.ok) throw new Error("Backup rate service returned HTTP " + response.status);
+          const result = await response.json();
+          if (!result.usd || typeof result.usd !== "object") {
+            throw new Error("Backup rate service returned an invalid response");
+          }
+          const rates = Object.fromEntries(
+            Object.entries(result.usd).map(([code, rate]) => [code.toUpperCase(), rate])
+          );
+          return { rates, date: result.date || null };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error("Backup rate services are unavailable");
+    }
+  ];
+
+  let lastError = null;
+
+  for (const getRates of sources) {
+    try {
+      const result = await getRates();
+      const rates = { ...result.rates, USD: 1 };
+
+      if (!hasUsableRates(rates)) {
+        throw new Error("Rate source did not provide every MINTLY currency");
+      }
+
+      currentRates = rates;
+      currentRateDate = result.date;
+
+      saveRateCache({
+        base: "USD",
+        rates: currentRates,
+        date: currentRateDate,
+        savedAt: Date.now()
+      });
+
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn("MINTLY exchange-rate source failed:", error);
+    }
+  }
+
+  if (hasUsableRates(cached?.rates)) {
+    currentRates = cached.rates;
+    currentRateDate = cached.date || null;
+    console.warn("Using previously cached exchange rates.");
     return;
   }
 
-  try {
-    const response = await fetch(
-      "https://open.er-api.com/v6/latest/USD"
-    );
-
-    if (!response.ok) {
-      throw new Error("Exchange-rate service unavailable.");
-    }
-
-    const result = await response.json();
-
-    if (
-      result.result !== "success" ||
-      result.base_code !== "USD" ||
-      !hasUsableRates(result.rates)
-    ) {
-      throw new Error("The exchange-rate service returned an incomplete currency list.");
-    }
-
-    currentRates = {
-      ...result.rates,
-      USD: 1
-    };
-
-    currentRateDate = result.time_last_update_utc || null;
-
-    saveRateCache({
-      base: "USD",
-      rates: currentRates,
-      date: currentRateDate,
-      savedAt: Date.now()
-    });
-
-  } catch (e) {
-    console.warn("Using cached exchange rates:", e);
-
-    if (hasUsableRates(cached?.rates)) {
-      currentRates = cached.rates;
-      currentRateDate = cached.date;
-    } else {
-      currentRates = { USD: 1 };
-      currentRateDate = null;
-    }
-  }
+  currentRates = { USD: 1 };
+  currentRateDate = null;
+  throw new Error(
+    "MINTLY couldn't download exchange rates. Please check your connection and try again. " +
+    (lastError?.message || "")
+  );
 }
 
 function getSnapshot() {
