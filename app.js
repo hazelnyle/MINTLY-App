@@ -678,7 +678,6 @@ function render() {
           <div class="small">
             ${escapeHtml(x.category || "General")} · ${escapeHtml(x.type)}
           </div>
-          <div class="small">${formatDate(x.created_at)}</div>
           <div class="small">
             Original: ${formatOriginalMoney(
               x.amount,
