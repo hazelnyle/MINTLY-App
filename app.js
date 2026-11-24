@@ -874,13 +874,20 @@ async function start(u) {
     // Complete any pending household invitations for this verified account
     // before loading the spaces available to them.
     let acceptedInvitations = 0;
+    let acceptanceWarning = "";
     const { data: acceptance, error: acceptanceError } =
       await supabase.functions.invoke("accept-invitations");
 
     if (acceptanceError) {
       console.error("MINTLY invitation acceptance failed:", acceptanceError);
+      acceptanceWarning = "Invitation acceptance couldn't complete: " + acceptanceError.message;
     } else {
       acceptedInvitations = Number(acceptance?.accepted_count || 0);
+      if (acceptance?.warnings?.length) {
+        acceptanceWarning = acceptance.warnings.join(" ");
+      } else if (Number(acceptance?.pending_count || 0) > 0 && acceptedInvitations === 0) {
+        acceptanceWarning = "A pending invitation was found, but MINTLY couldn't add this account. Please try refreshing or contact the household owner.";
+      }
     }
 
     await loadSpaces();
@@ -894,6 +901,8 @@ async function start(u) {
           ? "You've joined your household successfully."
           : `You've joined ${acceptedInvitations} households successfully.`
       );
+    } else if (acceptanceWarning) {
+      message(acceptanceWarning, "err");
     }
   } catch (e) {
     message(e.message, "err");
