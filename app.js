@@ -674,6 +674,7 @@ function render() {
       <div class="item row">
         <div>
           <b>${escapeHtml(x.description)}</b>
+          <div class="small">${formatDate(x.created_at)}</div>
           <div class="small">
             ${escapeHtml(x.category || "General")} · ${escapeHtml(x.type)}
           </div>
