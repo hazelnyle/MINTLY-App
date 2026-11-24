@@ -27,7 +27,7 @@ The browser app uses the Supabase publishable/anon key only. Never place a `serv
 
 Open Supabase SQL Editor and run `supabase/schema.sql`.
 
-The schema creates profiles, spaces, memberships, transactions, essentials and invitations, with Row Level Security policies. Test with two separate accounts before launch.
+The current starter schema is at `schema.sql` in the repository root. Run it in the Supabase SQL Editor for a new project. For an existing project, do not rerun destructive SQL; apply the additive migration `supabase/migrations/20261124_add_currency_fields.sql` to add the currency fields used by the app while preserving existing rows. Test with two separate accounts before launch.
 
 ## 3. Household invitations
 
