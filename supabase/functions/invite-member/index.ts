@@ -94,7 +94,7 @@ Deno.serve(async (req: Request) => {
     return respond(500, { error: "Could not save the household invitation. Please try again." });
   }
 
-  const redirectTo = appOrigin ? `${appOrigin.replace(/\/$/, "")}/` : undefined;
+  const redirectTo = `${appBaseUrl.replace(/\/$/, "")}/`;
   const { error: emailError } = await admin.auth.admin.inviteUserByEmail(email, {
     ...(redirectTo ? { redirectTo } : {}),
     data: { invited_to_space: spaceId }
