@@ -251,6 +251,27 @@ function formatOriginalMoney(amount, currency) {
   }).format(Number(amount || 0));
 }
 
+function formatDate(value) {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function getDueStatus(item) {
+  if (!item.last_purchased) return { label: "Add last purchased date", overdue: false };
+  const purchased = new Date(item.last_purchased + "T00:00:00");
+  if (Number.isNaN(purchased.getTime())) return { label: "Due date unavailable", overdue: false };
+  const due = new Date(purchased);
+  due.setDate(due.getDate() + Math.max(1, Number(item.restock_days) || 30));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return { label: `Overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`, overdue: true };
+  if (days === 0) return { label: "Due today", overdue: true };
+  return { label: `Due in ${days} day${days === 1 ? "" : "s"}`, overdue: false };
+}
+
 // CURRENCY SELECTORS
 
 function styleCurrencyControls() {
@@ -623,18 +644,23 @@ function render() {
       currency: currentCurrency
     }).format(exp);
 
+  const balance = inc - exp;
   $("balance").textContent =
     new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: currentCurrency
-    }).format(inc - exp);
+    }).format(balance);
+  $("balance").style.color = balance < 0 ? "var(--red)" : "";
 
   $("itemCount").textContent = essentials.length;
 
   $("recent").innerHTML =
     transactions.slice(0, 5).map(x => `
       <div class="item row">
-        <span>${escapeHtml(x.description)}</span>
+        <div>
+          <span>${escapeHtml(x.description)}</span>
+          <div class="small">${formatDate(x.created_at)}</div>
+        </div>
         <b>${x.type === "income" ? "+" : "−"}${formatMoney(
           x.amount,
           x.currency || "USD",
@@ -651,6 +677,7 @@ function render() {
           <div class="small">
             ${escapeHtml(x.category || "General")} · ${escapeHtml(x.type)}
           </div>
+          <div class="small">${formatDate(x.created_at)}</div>
           <div class="small">
             Original: ${formatOriginalMoney(
               x.amount,
@@ -690,6 +717,7 @@ function render() {
               x.currency || "USD"
             )}
           </div>
+          <div class="small ${getDueStatus(x).overdue ? "due-overdue" : "due-status"}">${getDueStatus(x).label}</div>
         </div>
         <div class="actions">
           ${canEdit() ? `
@@ -1034,29 +1062,37 @@ $("itemForm").onsubmit = async ev => {
 
 $("inviteForm").onsubmit = async ev => {
   ev.preventDefault();
+  const submit = ev.target.querySelector("button");
+  const originalLabel = submit?.textContent;
+  if (submit) { submit.disabled = true; submit.textContent = "Sending…"; }
+  $("inviteMsg").textContent = "";
 
   try {
-    const { data, error } = await supabase.functions.invoke(
-      "invite-member",
-      {
-        body: {
-          space_id: activeSpace,
-          email: $("inviteEmail").value,
-          role: $("inviteRole").value
-        }
-      }
-    );
+    const selectedSpace = spaces.find(space => space.id === activeSpace);
+    if (selectedSpace?.kind !== "household") throw new Error("Invitations can only be sent from a household space.");
+    if (!["owner", "admin"].includes(currentRole())) throw new Error("Only household owners and admins can invite members.");
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("Your session has expired. Please sign in again.");
 
-    if (error) throw error;
-
-    $("inviteMsg").textContent =
-      data?.message || "Invitation sent.";
-
+    const { data, error } = await supabase.functions.invoke("invite-member", {
+      body: { space_id: activeSpace, email: $("inviteEmail").value.trim(), role: $("inviteRole").value },
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (error) {
+      const details = error.context?.clone ? await error.context.clone().json().catch(() => null) : null;
+      throw new Error(details?.error || error.message || "The invitation service could not be reached.");
+    }
+    if (data?.error) throw new Error(data.error);
+    $("inviteMsg").textContent = data?.message || "Invitation sent.";
     ev.target.reset();
-
+    await loadMembers();
   } catch (e) {
-    $("inviteMsg").textContent =
-      "Invitation failed: " + e.message;
+    console.error("MINTLY invitation failed:", e);
+    $("inviteMsg").textContent = "Invitation failed: " + e.message;
+  } finally {
+    if (submit) { submit.disabled = false; submit.textContent = originalLabel || "Send invitation"; }
   }
 };
 
