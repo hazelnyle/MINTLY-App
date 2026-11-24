@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const authHeader = req.headers.get("Authorization") || "";
-  const token = authHeader.replace(/^Bearer\\s+/i, "");
+  const token = authHeader.replace(/^Bearer\s+/i, "");
   if (!token) return respond(401, { error: "Sign in before accepting an invitation." });
 
   const authClient = createClient(supabaseUrl, anonKey, {
