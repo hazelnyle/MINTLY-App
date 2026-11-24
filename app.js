@@ -1,3 +1,4 @@
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
@@ -9,11 +10,21 @@ const configured =
 
 const $ = id => document.getElementById(id);
 
-const money = n =>
-  new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD"
-  }).format(Number(n || 0));
+const CURRENCIES = {
+  USD: "US Dollar",
+  PKR: "Pakistani Rupee",
+  GBP: "British Pound",
+  EUR: "Euro",
+  AED: "UAE Dirham",
+  ZAR: "South African Rand"
+};
+
+const RATE_CACHE_KEY = "mintly-exchange-rates";
+const RATE_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
+
+let currentCurrency = "USD";
+let currentRates = { USD: 1 };
+let currentRateDate = null;
 
 let supabase = null;
 let user = null;
@@ -45,6 +56,281 @@ function escapeHtml(s) {
     "'": "&#39;"
   }[c]));
 }
+
+// EXCHANGE RATES
+
+function readRateCache() {
+  try {
+    return JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function saveRateCache(snapshot) {
+  try {
+    localStorage.setItem(RATE_CACHE_KEY, JSON.stringify(snapshot));
+  } catch (e) {
+    console.warn("Could not cache exchange rates:", e);
+  }
+}
+
+async function loadRates(force = false) {
+  const cached = readRateCache();
+
+  if (
+    !force &&
+    cached?.rates &&
+    cached.savedAt &&
+    Date.now() - cached.savedAt < RATE_CACHE_MAX_AGE
+  ) {
+    currentRates = cached.rates;
+    currentRateDate = cached.date;
+    return;
+  }
+
+  if (!navigator.onLine) {
+    if (cached?.rates) {
+      currentRates = cached.rates;
+      currentRateDate = cached.date;
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      "https://api.frankfurter.app/latest?from=USD"
+    );
+
+    if (!response.ok) {
+      throw new Error("Exchange-rate service unavailable.");
+    }
+
+    const result = await response.json();
+
+    currentRates = {
+      USD: 1,
+      ...result.rates
+    };
+
+    currentRateDate = result.date;
+
+    saveRateCache({
+      base: "USD",
+      rates: currentRates,
+      date: currentRateDate,
+      savedAt: Date.now()
+    });
+
+  } catch (e) {
+    console.warn("Using cached exchange rates:", e);
+
+    if (cached?.rates) {
+      currentRates = cached.rates;
+      currentRateDate = cached.date;
+    }
+  }
+}
+
+function getSnapshot() {
+  return {
+    base: "USD",
+    rates: { ...currentRates },
+    date: currentRateDate
+  };
+}
+
+function ratesFromSnapshot(snapshot) {
+  if (!snapshot) return currentRates;
+
+  if (snapshot.rates) return snapshot.rates;
+
+  return snapshot;
+}
+
+function convertAmount(amount, from, to, snapshot = null) {
+  const value = Number(amount || 0);
+
+  if (from === to) return value;
+
+  const rates = ratesFromSnapshot(snapshot);
+  const fromRate = Number(rates?.[from]);
+  const toRate = Number(rates?.[to]);
+
+  if (
+    !Number.isFinite(fromRate) ||
+    !Number.isFinite(toRate) ||
+    fromRate <= 0 ||
+    toRate <= 0
+  ) {
+    return null;
+  }
+
+  return (value / fromRate) * toRate;
+}
+
+function formatMoney(amount, currency = currentCurrency, snapshot = null) {
+  const converted = convertAmount(
+    amount,
+    currency,
+    currentCurrency,
+    snapshot
+  );
+
+  if (converted === null) {
+    return `${Number(amount || 0).toFixed(2)} ${currency}`;
+  }
+
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: currentCurrency
+  }).format(converted);
+}
+
+function formatOriginalMoney(amount, currency) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency
+  }).format(Number(amount || 0));
+}
+
+// CURRENCY SELECTORS
+
+function styleCurrencyControls() {
+  if ($("mintlyCurrencyStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "mintlyCurrencyStyles";
+  style.textContent = `
+    .mintly-currency-field {
+      display: block;
+      margin: 8px 0;
+      color: inherit;
+      font-size: 13px;
+    }
+    .mintly-currency-field select {
+      display: block;
+      width: 100%;
+      max-width: 180px;
+      margin-top: 5px;
+      padding: 9px;
+      border: 1px solid #dce5df;
+      border-radius: 9px;
+      background: white;
+      color: #294b3b;
+    }
+    #currencySelect {
+      width: auto;
+      max-width: 105px;
+      padding: 9px 5px;
+      border: 1px solid #dce5df;
+      border-radius: 9px;
+      background: white;
+      color: #294b3b;
+      font-size: 13px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function makeCurrencySelect(id, selected = "USD") {
+  const select = document.createElement("select");
+  select.id = id;
+
+  Object.entries(CURRENCIES).forEach(([code, name]) => {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = `${code} · ${name}`;
+    select.appendChild(option);
+  });
+
+  select.value = CURRENCIES[selected] ? selected : "USD";
+  return select;
+}
+
+function installCurrencySelectors() {
+  styleCurrencyControls();
+
+  // Personal display currency
+  let display = $("currencySelect");
+
+  if (!display) {
+    const spaceSelect = $("spaceSelect");
+
+    if (spaceSelect) {
+      display = makeCurrencySelect("currencySelect", currentCurrency);
+      display.title = "Your personal display currency";
+      spaceSelect.insertAdjacentElement("afterend", display);
+    }
+  }
+
+  if (display) {
+    display.value = currentCurrency;
+
+    display.onchange = async () => {
+      const selected = display.value;
+      if (!CURRENCIES[selected] || !user) return;
+
+      const previous = currentCurrency;
+      display.disabled = true;
+
+      try {
+        const { data, error } = await supabase.auth.updateUser({
+          data: { currency: selected }
+        });
+
+        if (error) throw error;
+
+        currentCurrency = selected;
+        user = data.user || user;
+        render();
+
+        message(`Display currency saved: ${selected}`);
+      } catch (e) {
+        currentCurrency = previous;
+        display.value = previous;
+        message("Currency could not be saved: " + e.message, "err");
+      } finally {
+        display.disabled = false;
+      }
+    };
+  }
+
+  // Original currency for each transaction
+  installFormCurrency("txForm", "txAmount", "txCurrency");
+
+  // Original currency for each essential
+  installFormCurrency("itemForm", "itemCost", "itemCurrency");
+}
+
+function installFormCurrency(formId, amountId, currencyId) {
+  const form = $(formId);
+  const amount = $(amountId);
+
+  if (!form || !amount || $(currencyId)) return;
+
+  const wrapper = document.createElement("label");
+  wrapper.className = "mintly-currency-field";
+  wrapper.textContent = "Original currency";
+
+  const select = makeCurrencySelect(currencyId, "USD");
+  wrapper.appendChild(select);
+
+  amount.insertAdjacentElement("afterend", wrapper);
+}
+
+function loadCurrencyPreference(u) {
+  const saved = u?.user_metadata?.currency;
+
+  currentCurrency = CURRENCIES[saved] ? saved : "USD";
+
+  installCurrencySelectors();
+
+  const selector = $("currencySelect");
+  if (selector) selector.value = currentCurrency;
+}
+
+// OFFLINE STORAGE
 
 function localPending() {
   try {
@@ -120,10 +406,6 @@ async function oauth(provider) {
   }
 }
 
-// Optional OAuth buttons.
-// These handlers activate when the corresponding buttons
-// exist in your HTML.
-
 if ($("googleLogin")) {
   $("googleLogin").onclick = () => oauth("google");
 }
@@ -153,10 +435,6 @@ async function loadSpaces() {
   spaces = (data || [])
     .map(x => ({ ...x.spaces, role: x.role }))
     .filter(x => x.id);
-
-  // SECURE PERSONAL SPACE CREATION
-  // Uses the database function created in Supabase.
-  // Space and owner membership are created together.
 
   if (!spaces.length) {
     const { data: spaceId, error: createError } =
@@ -238,22 +516,57 @@ async function loadData() {
 function render() {
   const inc = transactions
     .filter(x => x.type === "income")
-    .reduce((a, x) => a + Number(x.amount), 0);
+    .reduce((a, x) => {
+      const value = convertAmount(
+        x.amount,
+        x.currency || "USD",
+        currentCurrency,
+        x.fx_rates
+      );
+      return a + (value ?? 0);
+    }, 0);
 
   const exp = transactions
     .filter(x => x.type === "expense")
-    .reduce((a, x) => a + Number(x.amount), 0);
+    .reduce((a, x) => {
+      const value = convertAmount(
+        x.amount,
+        x.currency || "USD",
+        currentCurrency,
+        x.fx_rates
+      );
+      return a + (value ?? 0);
+    }, 0);
 
-  $("totalIncome").textContent = money(inc);
-  $("totalExpense").textContent = money(exp);
-  $("balance").textContent = money(inc - exp);
+  $("totalIncome").textContent =
+    new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currentCurrency
+    }).format(inc);
+
+  $("totalExpense").textContent =
+    new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currentCurrency
+    }).format(exp);
+
+  $("balance").textContent =
+    new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currentCurrency
+    }).format(inc - exp);
+
   $("itemCount").textContent = essentials.length;
 
   $("recent").innerHTML =
     transactions.slice(0, 5).map(x => `
       <div class="item row">
         <span>${escapeHtml(x.description)}</span>
-        <b>${x.type === "income" ? "+" : "−"}${money(x.amount)}</b>
+        <b>${x.type === "income" ? "+" : "−"}${formatMoney(
+          x.amount,
+          x.currency || "USD",
+          x.fx_rates
+        )}</b>
       </div>
     `).join("") || "Nothing here yet.";
 
@@ -265,9 +578,19 @@ function render() {
           <div class="small">
             ${escapeHtml(x.category || "General")} · ${escapeHtml(x.type)}
           </div>
+          <div class="small">
+            Original: ${formatOriginalMoney(
+              x.amount,
+              x.currency || "USD"
+            )}
+          </div>
         </div>
         <div style="text-align:right">
-          <b>${money(x.amount)}</b>
+          <b>${formatMoney(
+            x.amount,
+            x.currency || "USD",
+            x.fx_rates
+          )}</b>
           ${canEdit() ? `
             <div>
               <button class="danger" data-del-tx="${x.id}">
@@ -285,7 +608,14 @@ function render() {
         <div>
           <b>${escapeHtml(x.name)}</b>
           <div class="small">
-            ${money(x.estimated_cost)} · every ${x.restock_days} days
+            ${formatMoney(x.estimated_cost, x.currency || "USD")}
+            · every ${x.restock_days} days
+          </div>
+          <div class="small">
+            Original: ${formatOriginalMoney(
+              x.estimated_cost,
+              x.currency || "USD"
+            )}
           </div>
         </div>
         <div class="actions">
@@ -343,16 +673,31 @@ async function editItem(id) {
   const days = prompt("Restock interval in days", x.restock_days);
   if (days === null) return;
 
+  const currency = prompt(
+    "Original currency (USD, PKR, GBP, EUR, AED, ZAR)",
+    x.currency || "USD"
+  );
+
+  if (currency === null) return;
+
+  const selectedCurrency = currency.trim().toUpperCase();
+
+  if (!CURRENCIES[selectedCurrency]) {
+    return message("Please enter a supported currency code.", "err");
+  }
+
   try {
     const r = await write("essentials", {
       name,
       estimated_cost: Number(cost),
-      restock_days: Number(days)
+      restock_days: Number(days),
+      currency: selectedCurrency
     }, id);
 
     if (r?.error) throw r.error;
 
-    await loadData();
+    if (!r?.offline) await loadData();
+    else message("Edit saved on this device; waiting to sync.");
   } catch (e) {
     message(e.message, "err");
   }
@@ -414,11 +759,15 @@ async function start(u) {
   startingUserId = u.id;
   user = u;
 
+  loadCurrencyPreference(u);
+
   $("auth").classList.add("hidden");
   $("app").classList.remove("hidden");
   $("accountTop").classList.remove("hidden");
 
   try {
+    await loadRates();
+    installCurrencySelectors();
     await loadSpaces();
     await loadData();
     await loadMembers();
@@ -520,14 +869,32 @@ $("txForm").onsubmit = async ev => {
     return message("You have view-only access.", "err");
   }
 
+  const currency = $("txCurrency")?.value || "USD";
+
+  if (!CURRENCIES[currency]) {
+    return message("Choose a supported transaction currency.", "err");
+  }
+
   try {
+    await loadRates();
+
+    const snapshot = getSnapshot();
+
+    if (!snapshot.rates[currency]) {
+      throw new Error(
+        `No exchange rate is available for ${currency}. Please try again online.`
+      );
+    }
+
     const r = await write("transactions", {
       space_id: activeSpace,
       user_id: user.id,
       type: $("txType").value,
       amount: Number($("txAmount").value),
       description: $("txDescription").value,
-      category: $("txCategory").value || "General"
+      category: $("txCategory").value || "General",
+      currency,
+      fx_rates: snapshot
     });
 
     if (r?.error) throw r.error;
@@ -556,6 +923,12 @@ $("itemForm").onsubmit = async ev => {
     return message("You have view-only access.", "err");
   }
 
+  const currency = $("itemCurrency")?.value || "USD";
+
+  if (!CURRENCIES[currency]) {
+    return message("Choose a supported essential currency.", "err");
+  }
+
   try {
     const r = await write("essentials", {
       space_id: activeSpace,
@@ -563,7 +936,8 @@ $("itemForm").onsubmit = async ev => {
       name: $("itemName").value,
       estimated_cost: Number($("itemCost").value || 0),
       restock_days: Number($("itemDays").value || 30),
-      last_purchased: $("itemDate").value || null
+      last_purchased: $("itemDate").value || null,
+      currency
     });
 
     if (r?.error) throw r.error;
@@ -633,7 +1007,10 @@ document.querySelectorAll("[data-tab]").forEach(b => {
 
 // OFFLINE SUPPORT
 
-window.addEventListener("online", flushQueue);
+window.addEventListener("online", async () => {
+  await loadRates(true);
+  await flushQueue();
+});
 
 window.addEventListener("offline", () =>
   sync("Offline · changes will queue", true)
@@ -655,9 +1032,9 @@ async function flushQueue() {
 
   for (const x of q) {
     try {
-      let req = supabase.from(x.table);
+      const req = supabase.from(x.table);
 
-      let r = x.op === "update"
+      const r = x.op === "update"
         ? await req.update(
             Object.fromEntries(
               Object.entries(x.payload).filter(([k]) => k !== "id")
