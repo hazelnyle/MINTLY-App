@@ -146,7 +146,6 @@ async function loadRates(force = false) {
     } else {
       currentRates = { USD: 1 };
       currentRateDate = null;
-      throw e;
     }
   }
 }
