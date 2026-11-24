@@ -924,37 +924,51 @@ $("spaceSelect").onchange = async e => {
 // CREATE HOUSEHOLD
 
 $("newHousehold").onclick = async () => {
-  const name = prompt("Name your household", "Our home")?.trim();
-  if (!name) return;
+  const name = prompt("Name your household", "Our home");
+  if (name === null) return;
+  const cleanName = name.trim();
+  if (!cleanName) {
+    message("Please enter a household name.", "err");
+    alert("Please enter a household name.");
+    return;
+  }
 
   const button = $("newHousehold");
   const originalLabel = button.textContent;
   button.disabled = true;
   button.textContent = "Creating…";
+  message("Creating your household…");
 
   try {
     const { data: spaceId, error } = await supabase.rpc(
       "create_household_space",
-      { household_name: name }
+      { household_name: cleanName }
     );
 
     if (error) throw error;
-    if (!spaceId) throw new Error("The household was not created. Please try again.");
+    if (typeof spaceId !== "string" || !spaceId) {
+      throw new Error("The database did not return a household ID.");
+    }
 
     activeSpace = spaceId;
     await loadSpaces();
 
-    if (activeSpace !== spaceId) {
-      throw new Error("Household created, but it could not be selected. Please refresh and try again.");
+    const createdSpace = spaces.find(space => space.id === spaceId);
+    if (!createdSpace || createdSpace.kind !== "household" || createdSpace.role !== "owner") {
+      throw new Error("The household was created, but your owner membership could not be loaded. Refresh the page and check your spaces.");
     }
 
+    $("spaceSelect").value = spaceId;
+    updateSpaceUI();
     await loadData();
     await loadMembers();
     document.querySelector('[data-tab="household"]').click();
-    message("Household created. You can now invite members.");
+    message("Household created successfully. You can now invite members.");
   } catch (e) {
     console.error("MINTLY household creation failed:", e);
-    message("Household creation failed: " + e.message, "err");
+    const detail = e?.message || String(e);
+    message("Household creation failed: " + detail, "err");
+    alert("MINTLY couldn't create the household:\n\n" + detail);
   } finally {
     button.disabled = false;
     button.textContent = originalLabel;
