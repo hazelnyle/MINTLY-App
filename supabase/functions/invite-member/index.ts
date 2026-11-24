@@ -1,7 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const appOrigin = Deno.env.get("APP_ORIGIN") || "https://hazelnyle.github.io";
+const appBaseUrl = Deno.env.get("APP_BASE_URL") || "https://hazelnyle.github.io/MINTLY-App";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("APP_ORIGIN") || "*",
+  "Access-Control-Allow-Origin": appOrigin,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
@@ -18,7 +20,6 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
-  const appOrigin = Deno.env.get("APP_ORIGIN");
 
   if (!supabaseUrl || !serviceRoleKey || !anonKey) {
     console.error("Missing required invite-member environment secrets.");
