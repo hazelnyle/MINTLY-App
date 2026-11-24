@@ -924,40 +924,40 @@ $("spaceSelect").onchange = async e => {
 // CREATE HOUSEHOLD
 
 $("newHousehold").onclick = async () => {
-  const name = prompt("Name your household", "Our home");
+  const name = prompt("Name your household", "Our home")?.trim();
   if (!name) return;
 
+  const button = $("newHousehold");
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Creating…";
+
   try {
-    const { data, error } = await supabase
-      .from("spaces")
-      .insert({
-        name,
-        kind: "household",
-        created_by: user.id
-      })
-      .select()
-      .single();
+    const { data: spaceId, error } = await supabase.rpc(
+      "create_household_space",
+      { household_name: name }
+    );
 
     if (error) throw error;
+    if (!spaceId) throw new Error("The household was not created. Please try again.");
 
-    const { error: me } = await supabase
-      .from("space_members")
-      .insert({
-        space_id: data.id,
-        user_id: user.id,
-        role: "owner"
-      });
-
-    if (me) throw me;
-
+    activeSpace = spaceId;
     await loadSpaces();
+
+    if (activeSpace !== spaceId) {
+      throw new Error("Household created, but it could not be selected. Please refresh and try again.");
+    }
+
     await loadData();
     await loadMembers();
-
     document.querySelector('[data-tab="household"]').click();
-
+    message("Household created. You can now invite members.");
   } catch (e) {
-    message(e.message, "err");
+    console.error("MINTLY household creation failed:", e);
+    message("Household creation failed: " + e.message, "err");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
   }
 };
 
