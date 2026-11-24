@@ -1,31 +1,25 @@
-
+<CodeBlock language="javascript" editable>
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
-
 const configured =
-  SUPABASE_URL.startsWith("https://") &&
-  !SUPABASE_URL.includes("YOUR-PROJECT") &&
-  SUPABASE_ANON_KEY.length > 30 &&
-  !SUPABASE_ANON_KEY.includes("YOUR_");
-
+SUPABASE_URL.startsWith("https://") &&
+!SUPABASE_URL.includes("YOUR-PROJECT") &&
+SUPABASE_ANON_KEY.length > 30 &&
+!SUPABASE_ANON_KEY.includes("YOUR_");
 const $ = id => document.getElementById(id);
-
 const CURRENCIES = {
-  USD: "US Dollar",
-  PKR: "Pakistani Rupee",
-  GBP: "British Pound",
-  EUR: "Euro",
-  AED: "UAE Dirham",
-  ZAR: "South African Rand"
+USD: "US Dollar",
+PKR: "Pakistani Rupee",
+GBP: "British Pound",
+EUR: "Euro",
+AED: "UAE Dirham",
+ZAR: "South African Rand"
 };
-
 const RATE_CACHE_KEY = "mintly-exchange-rates";
 const RATE_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
-
 let currentCurrency = "USD";
 let currentRates = { USD: 1 };
 let currentRateDate = null;
-
 let supabase = null;
 let user = null;
 let spaces = [];
@@ -34,1070 +28,177 @@ let transactions = [];
 let essentials = [];
 let mode = "login";
 let startingUserId = null;
-
-const pendingKey = () => `mintly-pending-${user?.id || "guest"}`;
-
+const pendingKey = () => mintly-pending-$DIL0;
 function message(text, type = "") {
-  $("toast").textContent = text;
-  $("toast").className = "small " + type;
+$("toast").textContent = text;
+$("toast").className = "small " + type;
 }
-
 function sync(text, warn = false) {
-  $("syncState").textContent = text;
-  $("syncState").style.color = warn ? "#a36b22" : "#718078";
+$("syncState").textContent = text;
+$("syncState").style.color = warn ? "#a36b22" : "#718078";
 }
-
 function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  }[c]));
+return String(s ?? "").replace(/[&<>"']/g, c => ({
+"&": "&",
+"<": "<",
+">": ">",
+'"': """,
+"'": "'"
+}[c]));
 }
-
 // EXCHANGE RATES
-
 function readRateCache() {
-  try {
-    return JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || "null");
-  } catch {
-    return null;
-  }
+try {
+return JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || "null");
+} catch {
+return null;
 }
-
 function saveRateCache(snapshot) {
-  try {
-    localStorage.setItem(RATE_CACHE_KEY, JSON.stringify(snapshot));
-  } catch (e) {
-    console.warn("Could not cache exchange rates:", e);
-  }
+try {
+localStorage.setItem(RATE_CACHE_KEY, JSON.stringify(snapshot));
+} catch (e) {
+console.warn("Could not cache exchange rates:", e);
 }
-
+}
 async function loadRates(force = false) {
-  const cached = readRateCache();
-
-  if (
-    !force &&
-    cached?.rates &&
-    cached.savedAt &&
-    Date.now() - cached.savedAt < RATE_CACHE_MAX_AGE
-  ) {
-    currentRates = cached.rates;
-    currentRateDate = cached.date;
-    return;
-  }
-
-  if (!navigator.onLine) {
-    if (cached?.rates) {
-      currentRates = cached.rates;
-      currentRateDate = cached.date;
-    }
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      "https://api.frankfurter.app/latest?from=USD"
-    );
-
-    if (!response.ok) {
-      throw new Error("Exchange-rate service unavailable.");
-    }
-
-    const result = await response.json();
-
-    currentRates = {
-      USD: 1,
-      ...result.rates
-    };
-
-    currentRateDate = result.date;
-
-    saveRateCache({
-      base: "USD",
-      rates: currentRates,
-      date: currentRateDate,
-      savedAt: Date.now()
-    });
-
-  } catch (e) {
-    console.warn("Using cached exchange rates:", e);
-
-    if (cached?.rates) {
-      currentRates = cached.rates;
-      currentRateDate = cached.date;
-    }
-  }
+const cached = readRateCache();
+// Check that the cache contains every currency MINTLY supports.
+const hasRequiredRates = rates =>
+rates &&
+Object.keys(CURRENCIES).every(code => {
+const value = Number(rates[code]);
+return Number.isFinite(value) && value > 0;
+});  
+// Use a valid cache if it is less than 24 hours old.
+if (
+!force &&
+hasRequiredRates(cached?.rates) &&
+cached.savedAt &&
+Date.now() - cached.savedAt < RATE_CACHE_MAX_AGE
+) {
+currentRates = cached.rates;
+currentRateDate = cached.date;
+return;
 }
-
-function getSnapshot() {
-  return {
-    base: "USD",
-    rates: { ...currentRates },
-    date: currentRateDate
-  };
+// If offline, use the cache if available.
+if (!navigator.onLine) {
+if (hasRequiredRates(cached?.rates)) {
+currentRates = cached.rates;
+currentRateDate = cached.date;
 }
-
-function ratesFromSnapshot(snapshot) {
-  if (!snapshot) return currentRates;
-
-  if (snapshot.rates) return snapshot.rates;
-
-  return snapshot;
+return;
 }
-
-function convertAmount(amount, from, to, snapshot = null) {
-  const value = Number(amount || 0);
-
-  if (from === to) return value;
-
-  const rates = ratesFromSnapshot(snapshot);
-  const fromRate = Number(rates?.[from]);
-  const toRate = Number(rates?.[to]);
-
-  if (
-    !Number.isFinite(fromRate) ||
-    !Number.isFinite(toRate) ||
-    fromRate <= 0 ||
-    toRate <= 0
-  ) {
-    return null;
-  }
-
-  return (value / fromRate) * toRate;
-}
-
-function formatMoney(amount, currency = currentCurrency, snapshot = null) {
-  const converted = convertAmount(
-    amount,
-    currency,
-    currentCurrency,
-    snapshot
-  );
-
-  if (converted === null) {
-    return `${Number(amount || 0).toFixed(2)} ${currency}`;
-  }
-
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: currentCurrency
-  }).format(converted);
-}
-
-function formatOriginalMoney(amount, currency) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency
-  }).format(Number(amount || 0));
-}
-
-// CURRENCY SELECTORS
-
-function styleCurrencyControls() {
-  if ($("mintlyCurrencyStyles")) return;
-
-  const style = document.createElement("style");
-  style.id = "mintlyCurrencyStyles";
-  style.textContent = `
-    .mintly-currency-field {
-      display: block;
-      margin: 8px 0;
-      color: inherit;
-      font-size: 13px;
-    }
-    .mintly-currency-field select {
-      display: block;
-      width: 100%;
-      max-width: 180px;
-      margin-top: 5px;
-      padding: 9px;
-      border: 1px solid #dce5df;
-      border-radius: 9px;
-      background: white;
-      color: #294b3b;
-    }
-    #currencySelect {
-      width: auto;
-      max-width: 105px;
-      padding: 9px 5px;
-      border: 1px solid #dce5df;
-      border-radius: 9px;
-      background: white;
-      color: #294b3b;
-      font-size: 13px;
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function makeCurrencySelect(id, selected = "USD") {
-  const select = document.createElement("select");
-  select.id = id;
-
-  Object.entries(CURRENCIES).forEach(([code, name]) => {
-    const option = document.createElement("option");
-    option.value = code;
-    option.textContent = `${code} · ${name}`;
-    select.appendChild(option);
-  });
-
-  select.value = CURRENCIES[selected] ? selected : "USD";
-  return select;
-}
-
-function installCurrencySelectors() {
-  styleCurrencyControls();
-
-  // Personal display currency
-  let display = $("currencySelect");
-
-  if (!display) {
-    const spaceSelect = $("spaceSelect");
-
-    if (spaceSelect) {
-      display = makeCurrencySelect("currencySelect", currentCurrency);
-      display.title = "Your personal display currency";
-      spaceSelect.insertAdjacentElement("afterend", display);
-    }
-  }
-
-  if (display) {
-    display.value = currentCurrency;
-
-    display.onchange = async () => {
-      const selected = display.value;
-      if (!CURRENCIES[selected] || !user) return;
-
-      const previous = currentCurrency;
-      display.disabled = true;
-
-      try {
-        const { data, error } = await supabase.auth.updateUser({
-          data: { currency: selected }
-        });
-
-        if (error) throw error;
-
-        currentCurrency = selected;
-        user = data.user || user;
-        render();
-
-        message(`Display currency saved: ${selected}`);
-      } catch (e) {
-        currentCurrency = previous;
-        display.value = previous;
-        message("Currency could not be saved: " + e.message, "err");
-      } finally {
-        display.disabled = false;
-      }
-    };
-  }
-
-  // Original currency for each transaction
-  installFormCurrency("txForm", "txAmount", "txCurrency");
-
-  // Original currency for each essential
-  installFormCurrency("itemForm", "itemCost", "itemCurrency");
-}
-
-function installFormCurrency(formId, amountId, currencyId) {
-  const form = $(formId);
-  const amount = $(amountId);
-
-  if (!form || !amount || $(currencyId)) return;
-
-  const wrapper = document.createElement("label");
-  wrapper.className = "mintly-currency-field";
-  wrapper.textContent = "Original currency";
-
-  const select = makeCurrencySelect(currencyId, "USD");
-  wrapper.appendChild(select);
-
-  amount.insertAdjacentElement("afterend", wrapper);
-}
-
-function loadCurrencyPreference(u) {
-  const saved = u?.user_metadata?.currency;
-
-  currentCurrency = CURRENCIES[saved] ? saved : "USD";
-
-  installCurrencySelectors();
-
-  const selector = $("currencySelect");
-  if (selector) selector.value = currentCurrency;
-}
-
-// OFFLINE STORAGE
-
-function localPending() {
-  try {
-    return JSON.parse(localStorage.getItem(pendingKey()) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function queue(op, table, payload) {
-  const q = localPending();
-
-  q.push({
-    op,
-    table,
-    payload,
-    queued_at: new Date().toISOString()
-  });
-
-  localStorage.setItem(pendingKey(), JSON.stringify(q));
-  sync("Offline · changes queued", true);
-}
-
-async function write(table, payload, id = null) {
-  if (!navigator.onLine) {
-    queue(id ? "update" : "insert", table, {
-      ...payload,
-      ...(id ? { id } : {})
-    });
-
-    return { offline: true };
-  }
-
-  const q = supabase.from(table);
-
-  const result = id
-    ? await q.update(payload).eq("id", id)
-    : await q.insert(payload);
-
-  if (result.error) {
-    if (!navigator.onLine) {
-      queue(id ? "update" : "insert", table, {
-        ...payload,
-        ...(id ? { id } : {})
-      });
-
-      return { offline: true };
-    }
-
-    throw result.error;
-  }
-
-  sync("☁ Saved");
-  return result;
-}
-
-// AUTHENTICATION
-
-async function oauth(provider) {
-  if (!supabase) return;
-
-  try {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: window.location.href.split("#")[0]
-      }
-    });
-
-    if (error) throw error;
-  } catch (e) {
-    $("authMsg").textContent = e.message;
-  }
-}
-
-if ($("googleLogin")) {
-  $("googleLogin").onclick = () => oauth("google");
-}
-
-if ($("facebookLogin")) {
-  $("facebookLogin").onclick = () => oauth("facebook");
-}
-
-// PERSONAL AND HOUSEHOLD SPACES
-
-function currentRole() {
-  return spaces.find(s => s.id === activeSpace)?.role || "owner";
-}
-
-function canEdit() {
-  return ["owner", "admin", "editor"].includes(currentRole());
-}
-
-async function loadSpaces() {
-  const { data, error } = await supabase
-    .from("space_members")
-    .select("space_id,role,spaces(id,name,kind)")
-    .eq("user_id", user.id);
-
-  if (error) throw error;
-
-  spaces = (data || [])
-    .map(x => ({ ...x.spaces, role: x.role }))
-    .filter(x => x.id);
-
-  if (!spaces.length) {
-    const { data: spaceId, error: createError } =
-      await supabase.rpc("create_personal_space");
-
-    if (createError) throw createError;
-
-    const { data: s, error: spaceError } = await supabase
-      .from("spaces")
-      .select("id,name,kind")
-      .eq("id", spaceId)
-      .single();
-
-    if (spaceError) throw spaceError;
-
-    spaces = [{ ...s, role: "owner" }];
-  }
-
-  if (!activeSpace || !spaces.some(s => s.id === activeSpace)) {
-    activeSpace = spaces[0].id;
-  }
-
-  $("spaceSelect").innerHTML = spaces.map(s =>
-    `<option value="${s.id}">${escapeHtml(s.name)}${s.kind === "personal" ? " · Personal" : " · Household"}</option>`
-  ).join("");
-
-  $("spaceSelect").value = activeSpace;
-
-  updateSpaceUI();
-}
-
-function updateSpaceUI() {
-  const s = spaces.find(x => x.id === activeSpace);
-
-  $("spaceDescription").textContent =
-    s?.kind === "personal"
-      ? "Private personal space"
-      : "Shared household space";
-
-  $("privacyNote").textContent =
-    s?.kind === "personal"
-      ? "Personal space: only you can access this information."
-      : "Household space: records here are shared with authorised household members.";
-
-  $("newHousehold").classList.toggle(
-    "hidden",
-    s?.kind === "household"
-  );
-}
-
-// LOAD DASHBOARD DATA
-
-async function loadData() {
-  if (!activeSpace) return;
-
-  const [t, e] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("*")
-      .eq("space_id", activeSpace)
-      .order("created_at", { ascending: false }),
-
-    supabase
-      .from("essentials")
-      .select("*")
-      .eq("space_id", activeSpace)
-      .order("name")
-  ]);
-
-  if (t.error) throw t.error;
-  if (e.error) throw e.error;
-
-  transactions = t.data || [];
-  essentials = e.data || [];
-
-  render();
-}
-
-function render() {
-  const inc = transactions
-    .filter(x => x.type === "income")
-    .reduce((a, x) => {
-      const value = convertAmount(
-        x.amount,
-        x.currency || "USD",
-        currentCurrency,
-        x.fx_rates
-      );
-      return a + (value ?? 0);
-    }, 0);
-
-  const exp = transactions
-    .filter(x => x.type === "expense")
-    .reduce((a, x) => {
-      const value = convertAmount(
-        x.amount,
-        x.currency || "USD",
-        currentCurrency,
-        x.fx_rates
-      );
-      return a + (value ?? 0);
-    }, 0);
-
-  $("totalIncome").textContent =
-    new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currentCurrency
-    }).format(inc);
-
-  $("totalExpense").textContent =
-    new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currentCurrency
-    }).format(exp);
-
-  $("balance").textContent =
-    new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currentCurrency
-    }).format(inc - exp);
-
-  $("itemCount").textContent = essentials.length;
-
-  $("recent").innerHTML =
-    transactions.slice(0, 5).map(x => `
-      <div class="item row">
-        <span>${escapeHtml(x.description)}</span>
-        <b>${x.type === "income" ? "+" : "−"}${formatMoney(
-          x.amount,
-          x.currency || "USD",
-          x.fx_rates
-        )}</b>
-      </div>
-    `).join("") || "Nothing here yet.";
-
-  $("transactions").innerHTML =
-    transactions.map(x => `
-      <div class="item row">
-        <div>
-          <b>${escapeHtml(x.description)}</b>
-          <div class="small">
-            ${escapeHtml(x.category || "General")} · ${escapeHtml(x.type)}
-          </div>
-          <div class="small">
-            Original: ${formatOriginalMoney(
-              x.amount,
-              x.currency || "USD"
-            )}
-          </div>
-        </div>
-        <div style="text-align:right">
-          <b>${formatMoney(
-            x.amount,
-            x.currency || "USD",
-            x.fx_rates
-          )}</b>
-          ${canEdit() ? `
-            <div>
-              <button class="danger" data-del-tx="${x.id}">
-                Delete
-              </button>
-            </div>
-          ` : ""}
-        </div>
-      </div>
-    `).join("") || "No transactions yet.";
-
-  $("essentialsList").innerHTML =
-    essentials.map(x => `
-      <div class="item row">
-        <div>
-          <b>${escapeHtml(x.name)}</b>
-          <div class="small">
-            ${formatMoney(x.estimated_cost, x.currency || "USD")}
-            · every ${x.restock_days} days
-          </div>
-          <div class="small">
-            Original: ${formatOriginalMoney(
-              x.estimated_cost,
-              x.currency || "USD"
-            )}
-          </div>
-        </div>
-        <div class="actions">
-          ${canEdit() ? `
-            <button class="secondary" data-edit-item="${x.id}">Edit</button>
-            <button class="danger" data-del-item="${x.id}">Delete</button>
-          ` : ""}
-        </div>
-      </div>
-    `).join("") || "No essentials yet.";
-
-  document.querySelectorAll("[data-del-tx]").forEach(b => {
-    b.onclick = () => deleteRecord("transactions", b.dataset.delTx);
-  });
-
-  document.querySelectorAll("[data-del-item]").forEach(b => {
-    b.onclick = () => deleteRecord("essentials", b.dataset.delItem);
-  });
-
-  document.querySelectorAll("[data-edit-item]").forEach(b => {
-    b.onclick = () => editItem(b.dataset.editItem);
-  });
-}
-
-// DELETE RECORDS
-
-async function deleteRecord(table, id) {
-  if (!canEdit() || !confirm("Delete this record?")) return;
-
-  const { error } = await supabase
-    .from(table)
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    message(error.message, "err");
-  } else {
-    message("Deleted");
-    await loadData();
-  }
-}
-
-// EDIT ESSENTIALS
-
-async function editItem(id) {
-  const x = essentials.find(y => y.id === id);
-  if (!x) return;
-
-  const name = prompt("Item name", x.name);
-  if (name === null) return;
-
-  const cost = prompt("Estimated cost", x.estimated_cost);
-  if (cost === null) return;
-
-  const days = prompt("Restock interval in days", x.restock_days);
-  if (days === null) return;
-
-  const currency = prompt(
-    "Original currency (USD, PKR, GBP, EUR, AED, ZAR)",
-    x.currency || "USD"
-  );
-
-  if (currency === null) return;
-
-  const selectedCurrency = currency.trim().toUpperCase();
-
-  if (!CURRENCIES[selectedCurrency]) {
-    return message("Please enter a supported currency code.", "err");
-  }
-
-  try {
-    const r = await write("essentials", {
-      name,
-      estimated_cost: Number(cost),
-      restock_days: Number(days),
-      currency: selectedCurrency
-    }, id);
-
-    if (r?.error) throw r.error;
-
-    if (!r?.offline) await loadData();
-    else message("Edit saved on this device; waiting to sync.");
-  } catch (e) {
-    message(e.message, "err");
-  }
-}
-
-// EMAIL LOGIN AND SIGNUP
-
-$("authForm").addEventListener("submit", async ev => {
-  ev.preventDefault();
-
-  if (!configured) {
-    $("authMsg").textContent =
-      "First configure config.js with your Supabase project URL and publishable/anon key. See README.";
-
-    return;
-  }
-
-  const email = $("email").value;
-  const password = $("password").value;
-
-  try {
-    const r = mode === "login"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password });
-
-    if (r.error) throw r.error;
-
-    $("authMsg").textContent =
-      mode === "signup"
-        ? "Account created. Check your email if confirmation is enabled."
-        : "Signed in.";
-
-    if (r.data.session) {
-      await start(r.data.user);
-    }
-  } catch (e) {
-    $("authMsg").textContent = e.message;
-  }
-});
-
-$("loginMode").onclick = () => setMode("login");
-$("signupMode").onclick = () => setMode("signup");
-
-function setMode(m) {
-  mode = m;
-
-  $("loginMode").classList.toggle("active", m === "login");
-  $("signupMode").classList.toggle("active", m === "signup");
-
-  $("authSubmit").textContent =
-    m === "login" ? "Sign in" : "Create account";
-}
-
-// START APPLICATION
-
-async function start(u) {
-  if (!u || startingUserId === u.id) return;
-
-  startingUserId = u.id;
-  user = u;
-
-  loadCurrencyPreference(u);
-
-  $("auth").classList.add("hidden");
-  $("app").classList.remove("hidden");
-  $("accountTop").classList.remove("hidden");
-
-  try {
-    await loadRates();
-    installCurrencySelectors();
-    await loadSpaces();
-    await loadData();
-    await loadMembers();
-    await flushQueue();
-  } catch (e) {
-    message(e.message, "err");
-    console.error("MINTLY startup error:", e);
-  }
-}
-
-// HOUSEHOLD MEMBERS
-
-async function loadMembers() {
-  if (!activeSpace) return;
-
-  const { data, error } = await supabase
-    .from("space_members")
-    .select("user_id,role,profiles(email)")
-    .eq("space_id", activeSpace);
-
-  $("members").innerHTML = error
-    ? `<span class="small">${escapeHtml(error.message)}</span>`
-    : (data || []).map(m => `
-        <div class="item row">
-          <span>${escapeHtml(m.profiles?.email || "Household member")}</span>
-          <span class="small">${escapeHtml(m.role)}</span>
-        </div>
-      `).join("") || "No members found.";
-}
-
-// SIGN OUT
-
-$("signOut").onclick = async () => {
-  await supabase.auth.signOut();
-  location.reload();
-};
-
-// SPACE SELECTION
-
-$("spaceSelect").onchange = async e => {
-  activeSpace = e.target.value;
-
-  updateSpaceUI();
-
-  try {
-    await loadData();
-    await loadMembers();
-  } catch (err) {
-    message(err.message, "err");
-  }
-};
-
-// CREATE HOUSEHOLD
-
-$("newHousehold").onclick = async () => {
-  const name = prompt("Name your household", "Our home");
-  if (!name) return;
-
-  try {
-    const { data, error } = await supabase
-      .from("spaces")
-      .insert({
-        name,
-        kind: "household",
-        created_by: user.id
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    const { error: me } = await supabase
-      .from("space_members")
-      .insert({
-        space_id: data.id,
-        user_id: user.id,
-        role: "owner"
-      });
-
-    if (me) throw me;
-
-    await loadSpaces();
-    await loadData();
-    await loadMembers();
-
-    document.querySelector('[data-tab="household"]').click();
-
-  } catch (e) {
-    message(e.message, "err");
-  }
-};
-
-// ADD TRANSACTION
-
-$("txForm").onsubmit = async ev => {
-  ev.preventDefault();
-
-  if (!canEdit()) {
-    return message("You have view-only access.", "err");
-  }
-
-  const currency = $("txCurrency")?.value || "USD";
-
-  if (!CURRENCIES[currency]) {
-    return message("Choose a supported transaction currency.", "err");
-  }
-
-  try {
-    await loadRates();
-
-    const snapshot = getSnapshot();
-
-    if (!snapshot.rates[currency]) {
-      throw new Error(
-        `No exchange rate is available for ${currency}. Please try again online.`
-      );
-    }
-
-    const r = await write("transactions", {
-      space_id: activeSpace,
-      user_id: user.id,
-      type: $("txType").value,
-      amount: Number($("txAmount").value),
-      description: $("txDescription").value,
-      category: $("txCategory").value || "General",
-      currency,
-      fx_rates: snapshot
-    });
-
-    if (r?.error) throw r.error;
-
-    ev.target.reset();
-
-    if (!r?.offline) await loadData();
-
-    message(
-      r?.offline
-        ? "Saved on this device; waiting to sync."
-        : "Transaction added."
-    );
-
-  } catch (e) {
-    message(e.message, "err");
-  }
-};
-
-// ADD ESSENTIAL
-
-$("itemForm").onsubmit = async ev => {
-  ev.preventDefault();
-
-  if (!canEdit()) {
-    return message("You have view-only access.", "err");
-  }
-
-  const currency = $("itemCurrency")?.value || "USD";
-
-  if (!CURRENCIES[currency]) {
-    return message("Choose a supported essential currency.", "err");
-  }
-
-  try {
-    const r = await write("essentials", {
-      space_id: activeSpace,
-      user_id: user.id,
-      name: $("itemName").value,
-      estimated_cost: Number($("itemCost").value || 0),
-      restock_days: Number($("itemDays").value || 30),
-      last_purchased: $("itemDate").value || null,
-      currency
-    });
-
-    if (r?.error) throw r.error;
-
-    ev.target.reset();
-
-    if (!r?.offline) await loadData();
-
-    message(
-      r?.offline
-        ? "Saved on this device; waiting to sync."
-        : "Essential added."
-    );
-
-  } catch (e) {
-    message(e.message, "err");
-  }
-};
-
-// INVITE HOUSEHOLD MEMBER
-
-$("inviteForm").onsubmit = async ev => {
-  ev.preventDefault();
-
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "invite-member",
-      {
-        body: {
-          space_id: activeSpace,
-          email: $("inviteEmail").value,
-          role: $("inviteRole").value
-        }
-      }
-    );
-
-    if (error) throw error;
-
-    $("inviteMsg").textContent =
-      data?.message || "Invitation sent.";
-
-    ev.target.reset();
-
-  } catch (e) {
-    $("inviteMsg").textContent =
-      "Invitation failed: " + e.message;
-  }
-};
-
-// NAVIGATION TABS
-
-document.querySelectorAll("[data-tab]").forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll("[data-tab]").forEach(x =>
-      x.classList.toggle("active", x === b)
-    );
-
-    document.querySelectorAll(".tabview").forEach(x =>
-      x.classList.toggle("hidden", x.id !== b.dataset.tab)
-    );
-
-    if (b.dataset.tab === "household") {
-      loadMembers();
-    }
-  };
-});
-
-// OFFLINE SUPPORT
-
-window.addEventListener("online", async () => {
-  await loadRates(true);
-  await flushQueue();
-});
-
-window.addEventListener("offline", () =>
-  sync("Offline · changes will queue", true)
+try {
+const response = await fetch(
+"https://api.frankfurter.dev/v2/rates?base=USD⁠"
 );
 
-async function flushQueue() {
-  if (!user || !navigator.onLine) return;
-
-  const q = localPending();
-
-  if (!q.length) {
-    sync("☁ All changes synced");
-    return;
-  }
-
-  sync("Syncing offline changes…");
-
-  const remaining = [];
-
-  for (const x of q) {
-    try {
-      const req = supabase.from(x.table);
-
-      const r = x.op === "update"
-        ? await req.update(
-            Object.fromEntries(
-              Object.entries(x.payload).filter(([k]) => k !== "id")
-            )
-          ).eq("id", x.payload.id)
-        : await req.insert(x.payload);
-
-      if (r.error) throw r.error;
-
-    } catch (e) {
-      console.error("Offline sync failed:", e);
-      remaining.push(x);
-    }
-  }
-
-  localStorage.setItem(
-    pendingKey(),
-    JSON.stringify(remaining)
-  );
-
-  sync(
-    remaining.length
-      ? `Sync paused · ${remaining.length} pending`
-      : "☁ All changes synced",
-    !!remaining.length
-  );
-
-  await loadData();
+if (!response.ok) {
+throw new Error("Exchange-rate service unavailable.");
 }
-
-// SUPABASE INITIALISATION
-
-if (configured) {
-  supabase = createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
-    {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true
-      }
-    }
-  );
-
-  supabase.auth.getSession().then(({ data, error }) => {
-    if (error) {
-      console.error("Session error:", error);
-      return;
-    }
-
-    if (data.session) {
-      start(data.session.user);
-    }
-  });
-
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (session && (!user || user.id !== session.user.id)) {
-      start(session.user);
-    }
-  });
-
+const result = await response.json();
+if (!Array.isArray(result)) {
+throw new Error("Unexpected exchange-rate response.");
+}
+}
+// Convert the v2 response rows into MINTLY's rates object.
+const rates = { USD: 1 };
+result.forEach(item => {
+if (
+item.base === "USD" &&
+item.quote &&
+Number.isFinite(Number(item.rate))
+) {
+rates[item.quote] = Number(item.rate);
+}
+});
+// Make sure every supported currency has a valid rate.
+const missing = Object.keys(CURRENCIES).filter(
+code => !rates[code] || rates[code] <= 0
+);
+if (missing.length) {
+throw new Error(
+"Missing exchange rates: " + missing.join(", ")
+);
+}
+currentRates = rates;
+// Use the most recent date in the returned data.
+currentRateDate = result.reduce(
+(latest, item) =>
+item.date > latest ? item.date : latest,
+""
+);
+saveRateCache({
+base: "USD",
+rates: currentRates,
+date: currentRateDate,
+savedAt: Date.now()
+});
+} catch (e) {
+console.warn("Exchange-rate loading failed:", e);
+// Only fall back to a cache containing all supported currencies.
+if (hasRequiredRates(cached?.rates)) {
+currentRates = cached.rates;
+currentRateDate = cached.date;
 } else {
-  $("authMsg").textContent =
-    "Cloud setup required: add your Supabase URL and publishable key to config.js. The setup guide is in README.md.";
+currentRates = { USD: 1 };
+currentRateDate = null;
 }
+}
+}
+function getSnapshot() {
+return {
+base: "USD",
+rates: { ...currentRates },
+date: currentRateDate
+};
+}
+function ratesFromSnapshot(snapshot) {
+if (!snapshot) return currentRates;
+if (snapshot.rates) return snapshot.rates;
+return snapshot;
+}
+function convertAmount(amount, from, to, snapshot = null) {
+const value = Number(amount || 0);
+if (from === to) return value;
+const rates = ratesFromSnapshot(snapshot);
+const fromRate = Number(rates?.[from]);
+const toRate = Number(rates?.[to]);
+if (
+!Number.isFinite(fromRate) ||
+!Number.isFinite(toRate) ||
+fromRate <= 0 ||
+toRate <= 0
+) {
+return null;
+}
+return (value / fromRate) * toRate;
+}
+function formatMoney(amount, currency = currentCurrency, snapshot = null) {
+const converted = convertAmount(
+amount,
+currency,
+currentCurrency,
+snapshot
+);
+if (converted === null) {
+return $DIL0 $DIL1;
+}
+return new Intl.NumberFormat(undefined, {
+style: "currency",
+currency: currentCurrency
+}).format(converted);
+}
+function formatOriginalMoney(amount, currency) {
+return new Intl.NumberFormat(undefined, {
+style: "currency",
+currency
+}).format(Number(amount || 0));
+}
+// CURRENCY SELECTORS
+function styleCurrencyControls() {
+if ($("mintlyCurrencyStyles")) return;
+const style = document.createElement("style");
+style.id = "mintlyCurrencyStyles";
+style.textContent = `
+.mintly-currency-field
