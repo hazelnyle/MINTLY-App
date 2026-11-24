@@ -869,10 +869,32 @@ async function start(u) {
   try {
     await loadRates();
     installCurrencySelectors();
+
+    // A user arriving through an invitation link is authenticated by Supabase.
+    // Complete any pending household invitations for this verified account
+    // before loading the spaces available to them.
+    let acceptedInvitations = 0;
+    const { data: acceptance, error: acceptanceError } =
+      await supabase.functions.invoke("accept-invitations");
+
+    if (acceptanceError) {
+      console.error("MINTLY invitation acceptance failed:", acceptanceError);
+    } else {
+      acceptedInvitations = Number(acceptance?.accepted_count || 0);
+    }
+
     await loadSpaces();
     await loadData();
     await loadMembers();
     await flushQueue();
+
+    if (acceptedInvitations > 0) {
+      message(
+        acceptedInvitations === 1
+          ? "You've joined your household successfully."
+          : `You've joined ${acceptedInvitations} households successfully.`
+      );
+    }
   } catch (e) {
     message(e.message, "err");
     console.error("MINTLY startup error:", e);
