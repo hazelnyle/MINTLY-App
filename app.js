@@ -19,7 +19,7 @@ const CURRENCIES = {
   ZAR: "South African Rand"
 };
 
-const RATE_CACHE_KEY = "mintly-exchange-rates";
+const RATE_CACHE_KEY = "mintly-exchange-rates-v2";
 const RATE_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
 
 let currentCurrency = "USD";
@@ -75,12 +75,19 @@ function saveRateCache(snapshot) {
   }
 }
 
+function hasUsableRates(rates) {
+  return !!rates &&
+    Object.keys(CURRENCIES).every(code =>
+      Number.isFinite(Number(rates[code])) && Number(rates[code]) > 0
+    );
+}
+
 async function loadRates(force = false) {
   const cached = readRateCache();
 
   if (
     !force &&
-    cached?.rates &&
+    hasUsableRates(cached?.rates) &&
     cached.savedAt &&
     Date.now() - cached.savedAt < RATE_CACHE_MAX_AGE
   ) {
@@ -90,7 +97,7 @@ async function loadRates(force = false) {
   }
 
   if (!navigator.onLine) {
-    if (cached?.rates) {
+    if (hasUsableRates(cached?.rates)) {
       currentRates = cached.rates;
       currentRateDate = cached.date;
     }
@@ -99,7 +106,7 @@ async function loadRates(force = false) {
 
   try {
     const response = await fetch(
-      "https://api.frankfurter.app/latest?from=USD"
+      "https://open.er-api.com/v6/latest/USD"
     );
 
     if (!response.ok) {
@@ -108,12 +115,20 @@ async function loadRates(force = false) {
 
     const result = await response.json();
 
+    if (
+      result.result !== "success" ||
+      result.base_code !== "USD" ||
+      !hasUsableRates(result.rates)
+    ) {
+      throw new Error("The exchange-rate service returned an incomplete currency list.");
+    }
+
     currentRates = {
-      USD: 1,
-      ...result.rates
+      ...result.rates,
+      USD: 1
     };
 
-    currentRateDate = result.date;
+    currentRateDate = result.time_last_update_utc || null;
 
     saveRateCache({
       base: "USD",
@@ -125,9 +140,13 @@ async function loadRates(force = false) {
   } catch (e) {
     console.warn("Using cached exchange rates:", e);
 
-    if (cached?.rates) {
+    if (hasUsableRates(cached?.rates)) {
       currentRates = cached.rates;
       currentRateDate = cached.date;
+    } else {
+      currentRates = { USD: 1 };
+      currentRateDate = null;
+      throw e;
     }
   }
 }
@@ -229,6 +248,15 @@ function styleCurrencyControls() {
       color: #294b3b;
       font-size: 13px;
     }
+    #mintlyRateAttribution {
+      margin: 5px 0 12px;
+      color: #718078;
+      font-size: 10px;
+    }
+    #mintlyRateAttribution a {
+      color: inherit;
+      text-decoration: underline;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -266,6 +294,13 @@ function installCurrencySelectors() {
 
   if (display) {
     display.value = currentCurrency;
+
+    if (!$("mintlyRateAttribution")) {
+      const attribution = document.createElement("div");
+      attribution.id = "mintlyRateAttribution";
+      attribution.innerHTML = 'Exchange rates by <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>';
+      display.insertAdjacentElement("afterend", attribution);
+    }
 
     display.onchange = async () => {
       const selected = display.value;
