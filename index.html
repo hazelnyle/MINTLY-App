@@ -45,8 +45,17 @@ form .actions{margin-top:15px}.notice{padding:10px 12px;border-radius:12px;backg
     <div class="notice" id="privacyNote">Personal space: only you can access this information.</div>
     <nav class="tabs"><button class="active" data-tab="overview">Overview</button><button data-tab="money">Money</button><button data-tab="essentials">Essentials</button><button data-tab="household">Household</button></nav>
     <section id="overview" class="tabview">
-      <div class="grid"><div class="stat"><span class="small">Income</span><b id="totalIncome">0</b></div><div class="stat"><span class="small">Expenses</span><b id="totalExpense">0</b></div><div class="stat"><span class="small">Balance</span><b id="balance">0</b></div><div class="stat"><span class="small">Essentials tracked</span><b id="itemCount">0</b></div></div>
-      <div class="panel"><h2>Recent activity</h2><div id="recent" class="sub">Nothing here yet.</div></div>
+      <div class="overview-heading">
+        <div><span class="eyebrow">YOUR FINANCES</span><h2>Money at a glance</h2><p class="sub">A clear picture of what is coming in and going out.</p></div>
+        <span class="overview-chip"><span class="live-dot"></span> Your overview</span>
+      </div>
+      <div class="grid overview-stats">
+        <div class="stat income-stat"><span class="small">Income</span><b id="totalIncome">0</b><span class="stat-foot">Money received</span></div>
+        <div class="stat expense-stat"><span class="small">Expenses</span><b id="totalExpense">0</b><span class="stat-foot">Money spent</span></div>
+        <div class="stat balance-stat"><span class="small">Balance</span><b id="balance">0</b><span class="stat-foot">Income minus expenses</span></div>
+        <div class="stat essentials-stat"><span class="small">Essentials tracked</span><b id="itemCount">0</b><span class="stat-foot">Items in your list</span></div>
+      </div>
+      <div class="panel activity-panel"><div class="section-heading"><div><span class="eyebrow">THE LATEST</span><h2>Recent activity</h2></div><span class="activity-caption">Up to 5 transactions</span></div><div id="recent" class="sub">Nothing here yet.</div></div>
     </section>
     <section id="money" class="tabview hidden">
       <div class="panel"><h2>Add a transaction</h2><form id="txForm"><div class="grid"><div><label>Type</label><select id="txType"><option value="expense">Expense</option><option value="income">Income</option></select></div><div><label>Amount</label><input id="txAmount" type="number" min="0.01" step="0.01" required></div></div><label>Description</label><input id="txDescription" required placeholder="Groceries, salary..."><label>Category</label><input id="txCategory" placeholder="General"><div class="actions"><button>Add transaction</button></div></form></div>
