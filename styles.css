@@ -417,3 +417,22 @@ select { cursor: pointer; }
   .household-card { align-items:flex-start; flex-direction:column; }
   .household-card-actions { justify-content:flex-start; }
 }
+
+
+/* Money tab transaction editing and premium finishing */
+.transaction-form-panel .section-heading { align-items:center; margin-bottom:12px; }
+.transaction-form-panel .section-heading h2 { margin:0; }
+.transaction-actions { display:flex; justify-content:flex-end; gap:7px; margin-top:9px; }
+.transaction-actions button { min-height:34px; padding:6px 12px; font-size:11px; }
+#transactions .item { align-items:center; gap:16px; padding:18px 2px; }
+#transactions .item > div:first-child { flex:1; }
+#transactions .item > div:last-child { min-width:135px; }
+#transactions .item > div:last-child > b { display:block; font-size:15px; color:var(--mint-700); font-variant-numeric:tabular-nums; }
+#transactions .item:hover { background:linear-gradient(90deg,rgba(241,250,245,.72),transparent); }
+#txCancelEdit { background:#f5f6f3; color:#59685f; border-color:#e5eae4; }
+@media(max-width:520px) {
+  #transactions .item { align-items:flex-start; }
+  #transactions .item > div:last-child { min-width:105px; }
+  .transaction-actions { flex-direction:column; }
+  .transaction-actions button { width:100%; }
+}
