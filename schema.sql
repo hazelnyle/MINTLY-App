@@ -39,6 +39,7 @@ create table if not exists public.transactions (
   amount numeric(14,2) not null check (amount >= 0),
   description text not null,
   category text default 'General',
+  transaction_date date not null default current_date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -121,3 +122,9 @@ create policy "editors update essentials" on public.essentials for update using 
 create policy "editors delete essentials" on public.essentials for delete using (public.can_edit_space(space_id));
 drop policy if exists "members read invitations" on public.invitations;
 create policy "members read invitations" on public.invitations for select using (public.space_role(space_id) in ('owner','admin'));
+
+drop policy if exists "owners delete household spaces" on public.spaces;
+create policy "owners delete household spaces"
+  on public.spaces
+  for delete
+  using (kind = 'household' and public.space_role(id) = 'owner');
