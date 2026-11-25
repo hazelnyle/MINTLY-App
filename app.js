@@ -31,6 +31,7 @@ let user = null;
 let spaces = [];
 let activeSpace = null;
 let transactions = [];
+let editingTransactionId = null;
 let essentials = [];
 let mode = "login";
 let startingUserId = null;
@@ -792,10 +793,9 @@ function render() {
             x.fx_rates
           )}</b>
           ${canEdit() ? `
-            <div>
-              <button class="danger" data-del-tx="${x.id}">
-                Delete
-              </button>
+            <div class="transaction-actions">
+              <button class="secondary" type="button" data-edit-tx="${x.id}">Edit</button>
+              <button class="danger" type="button" data-del-tx="${x.id}">Delete</button>
             </div>
           ` : ""}
         </div>
@@ -828,6 +828,10 @@ function render() {
       </div>
     `).join("") || "No essentials yet.";
 
+  document.querySelectorAll("[data-edit-tx]").forEach(b => {
+    b.onclick = () => editTransaction(b.dataset.editTx);
+  });
+
   document.querySelectorAll("[data-del-tx]").forEach(b => {
     b.onclick = () => deleteRecord("transactions", b.dataset.delTx);
   });
@@ -839,6 +843,43 @@ function render() {
   document.querySelectorAll("[data-edit-item]").forEach(b => {
     b.onclick = () => editItem(b.dataset.editItem);
   });
+}
+
+// EDIT TRANSACTIONS
+function editTransaction(id) {
+  if (!canEdit()) return message("You have view-only access.", "err");
+  const item = transactions.find(transaction => transaction.id === id);
+  if (!item) return message("That transaction could not be found. Refresh and try again.", "err");
+
+  editingTransactionId = id;
+  $("txType").value = item.type;
+  $("txAmount").value = item.amount;
+  $("txDescription").value = item.description || "";
+  $("txCategory").value = item.category || "";
+  $("txDate").value = /^\\d{4}-\\d{2}-\\d{2}$/.test(item.transaction_date || "")
+    ? item.transaction_date
+    : localDateValue(new Date(item.transaction_date || item.created_at));
+  if ($("txCurrency")) $("txCurrency").value = item.currency || "USD";
+  updateTransactionDateLabel();
+
+  const submit = $("txForm").querySelector('button[type="submit"], button:not([type])');
+  if (submit) submit.textContent = "Save changes";
+  $("txFormTitle").textContent = "Edit transaction";
+  $("txCancelEdit").classList.remove("hidden");
+  $("txForm").scrollIntoView({ behavior: "smooth", block: "center" });
+  $("txDescription").focus();
+}
+
+function cancelTransactionEdit() {
+  editingTransactionId = null;
+  $("txForm").reset();
+  $("txDate").value = localDateValue();
+  if ($("txCurrency")) $("txCurrency").value = "USD";
+  updateTransactionDateLabel();
+  const submit = $("txForm").querySelector('button[type="submit"], button:not([type])');
+  if (submit) submit.textContent = "Add transaction";
+  $("txFormTitle").textContent = "Add a transaction";
+  $("txCancelEdit").classList.add("hidden");
 }
 
 // DELETE RECORDS
@@ -1113,6 +1154,8 @@ async function createHousehold() {
 $("newHousehold").onclick = createHousehold;
 $("createHouseholdFromTab").onclick = createHousehold;
 
+$("txCancelEdit").onclick = cancelTransactionEdit;
+
 // ADD TRANSACTION
 
 $("txDate").value = localDateValue();
@@ -1145,7 +1188,6 @@ $("txForm").onsubmit = async ev => {
 
     const r = await write("transactions", {
       space_id: activeSpace,
-      user_id: user.id,
       type: $("txType").value,
       amount: Number($("txAmount").value),
       description: $("txDescription").value,
@@ -1153,19 +1195,24 @@ $("txForm").onsubmit = async ev => {
       transaction_date: $("txDate").value || localDateValue(),
       currency,
       fx_rates: snapshot
-    });
+    }, editingTransactionId);
 
     if (r?.error) throw r.error;
 
-    ev.target.reset();
-    $("txDate").value = localDateValue();
+    const wasEditing = Boolean(editingTransactionId);
+    if (wasEditing) {
+      cancelTransactionEdit();
+    } else {
+      ev.target.reset();
+      $("txDate").value = localDateValue();
+    }
 
     if (!r?.offline) await loadData();
 
     message(
       r?.offline
-        ? "Saved on this device; waiting to sync."
-        : "Transaction added."
+        ? (wasEditing ? "Edit saved on this device; waiting to sync." : "Saved on this device; waiting to sync.")
+        : (wasEditing ? "Transaction updated." : "Transaction added.")
     );
 
   } catch (e) {
