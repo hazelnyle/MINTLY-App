@@ -58,7 +58,7 @@ form .actions{margin-top:15px}.notice{padding:10px 12px;border-radius:12px;backg
       <div class="panel activity-panel"><div class="section-heading"><div><span class="eyebrow">THE LATEST</span><h2>Recent activity</h2></div><span class="activity-caption">Up to 5 transactions</span></div><div id="recent" class="sub">Nothing here yet.</div></div>
     </section>
     <section id="money" class="tabview hidden">
-      <div class="panel"><h2>Add a transaction</h2><form id="txForm"><div class="grid"><div><label>Type</label><select id="txType"><option value="expense">Expense</option><option value="income">Income</option></select></div><div><label>Amount</label><input id="txAmount" type="number" min="0.01" step="0.01" required></div></div><label>Description</label><input id="txDescription" required placeholder="Groceries, salary..."><label>Category</label><input id="txCategory" placeholder="General"><div class="actions"><button>Add transaction</button></div></form></div>
+      <div class="panel"><h2>Add a transaction</h2><form id="txForm"><div class="grid"><div><label>Type</label><select id="txType"><option value="expense">Expense</option><option value="income">Income</option></select></div><div><label>Amount</label><input id="txAmount" type="number" min="0.01" step="0.01" required></div></div><label>Description</label><input id="txDescription" required placeholder="Groceries, salary..."><label id="txDateLabel" for="txDate">Date paid / expected</label><input id="txDate" type="date" required><label>Category</label><input id="txCategory" placeholder="General"><div class="actions"><button>Add transaction</button></div></form></div>
       <div class="panel"><h2>Transactions</h2><div id="transactions"></div></div>
     </section>
     <section id="essentials" class="tabview hidden">
@@ -66,6 +66,7 @@ form .actions{margin-top:15px}.notice{padding:10px 12px;border-radius:12px;backg
       <div class="panel"><h2>Your essentials</h2><div id="essentialsList"></div></div>
     </section>
     <section id="household" class="tabview hidden">
+      <div class="panel"><div class="row"><div><h2>Your households</h2><p class="sub">Create and manage your shared spaces here.</p></div><button id="createHouseholdFromTab" type="button">+ Create household</button></div><div id="householdSpaces"></div></div>
       <div class="panel"><h2>Household members</h2><p class="sub">Shared-space members can see and manage records in this household, subject to their role. Personal-space records stay private.</p><div id="members"></div></div>
       <div class="panel"><h2>Invite someone</h2><p class="small">Invitations are sent by a secure server function. Configure it before using this feature.</p><form id="inviteForm"><label>Email address</label><input id="inviteEmail" type="email" required><label>Permission</label><select id="inviteRole"><option value="editor">Can edit shared records</option><option value="viewer">Can view shared records</option></select><div class="actions"><button>Send invitation</button></div></form><div id="inviteMsg" class="small"></div></div>
     </section>
