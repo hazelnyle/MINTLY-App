@@ -401,3 +401,19 @@ select { cursor: pointer; }
   .activity-panel { padding:18px 16px 10px; }
   .activity-caption { display:none; }
 }
+
+
+/* Household management */
+.household-card {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:15px 0; border-bottom:1px solid var(--line);
+}
+.household-card:last-child { border-bottom:0; }
+.household-card-main { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.household-card-main b { overflow-wrap:anywhere; }
+.household-card-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
+.household-card-actions button { min-height:36px; padding:7px 11px; font-size:11px; }
+@media(max-width:560px) {
+  .household-card { align-items:flex-start; flex-direction:column; }
+  .household-card-actions { justify-content:flex-start; }
+}

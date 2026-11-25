@@ -253,9 +253,24 @@ function formatOriginalMoney(amount, currency) {
 
 function formatDate(value) {
   if (!value) return "Date unavailable";
-  const date = new Date(value);
+  const date = /^\\d{4}-\\d{2}-\\d{2}$/.test(String(value))
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
   if (Number.isNaN(date.getTime())) return "Date unavailable";
   return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function updateTransactionDateLabel() {
+  const label = $("txDateLabel");
+  if (!label) return;
+  label.textContent = $("txType").value === "income" ? "Date received" : "Date paid / expected";
 }
 
 function getDueStatus(item) {
@@ -558,6 +573,7 @@ async function loadSpaces() {
   $("spaceSelect").value = activeSpace;
 
   updateSpaceUI();
+  renderHouseholdSpaces();
 }
 
 function updateSpaceUI() {
@@ -577,6 +593,89 @@ function updateSpaceUI() {
     "hidden",
     s?.kind === "household"
   );
+}
+
+// HOUSEHOLD SPACE MANAGEMENT
+
+function renderHouseholdSpaces() {
+  const target = $("householdSpaces");
+  if (!target) return;
+  const households = spaces.filter(space => space.kind === "household");
+  target.innerHTML = households.map(space => {
+    const isOwner = space.role === "owner";
+    const canManage = ["owner", "admin"].includes(space.role);
+    return `
+      <div class="household-card">
+        <div class="household-card-main">
+          <b>${escapeHtml(space.name)}</b>
+          <span class="small">${escapeHtml(space.role)} · ${space.id === activeSpace ? "Currently selected" : "Household"}</span>
+        </div>
+        <div class="household-card-actions">
+          ${space.id !== activeSpace ? `<button class="secondary" data-open-household="${space.id}">Open</button>` : ""}
+          ${canManage ? `<button class="secondary" data-rename-household="${space.id}">Rename</button>` : ""}
+          ${isOwner ? `<button class="danger" data-delete-household="${space.id}">Delete</button>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("") || '<p class="small">No households yet. Create one here to start sharing a space.</p>';
+
+  target.querySelectorAll("[data-open-household]").forEach(button => {
+    button.onclick = async () => {
+      activeSpace = button.dataset.openHousehold;
+      $("spaceSelect").value = activeSpace;
+      updateSpaceUI();
+      renderHouseholdSpaces();
+      try {
+        await loadData();
+        await loadMembers();
+      } catch (error) {
+        message(error.message, "err");
+      }
+    };
+  });
+  target.querySelectorAll("[data-rename-household]").forEach(button => {
+    button.onclick = () => renameHousehold(button.dataset.renameHousehold);
+  });
+  target.querySelectorAll("[data-delete-household]").forEach(button => {
+    button.onclick = () => deleteHousehold(button.dataset.deleteHousehold);
+  });
+}
+
+async function renameHousehold(id) {
+  const household = spaces.find(space => space.id === id && space.kind === "household");
+  if (!household || !["owner", "admin"].includes(household.role)) return;
+  const entered = prompt("Rename household", household.name);
+  if (entered === null) return;
+  const name = entered.trim();
+  if (!name) return message("Please enter a household name.", "err");
+  try {
+    const { error } = await supabase.from("spaces").update({ name }).eq("id", id);
+    if (error) throw error;
+    await loadSpaces();
+    message("Household renamed.");
+  } catch (error) {
+    message("Could not rename household: " + error.message, "err");
+  }
+}
+
+async function deleteHousehold(id) {
+  const household = spaces.find(space => space.id === id && space.kind === "household");
+  if (!household || household.role !== "owner") return;
+  const confirmed = confirm(`Delete "${household.name}" and permanently remove its shared transactions, essentials, invitations, and memberships? This cannot be undone.`);
+  if (!confirmed) return;
+  const typed = prompt(`To confirm permanent deletion, type the household name exactly:\\n\\n${household.name}`);
+  if (typed !== household.name) return message("Household was not deleted. The name did not match.", "err");
+  try {
+    const { error } = await supabase.from("spaces").delete().eq("id", id);
+    if (error) throw error;
+    if (activeSpace === id) activeSpace = null;
+    await loadSpaces();
+    await loadData();
+    await loadMembers();
+    message("Household deleted.");
+  } catch (error) {
+    message("Could not delete household: " + error.message, "err");
+  }
 }
 
 // LOAD DASHBOARD DATA
@@ -659,7 +758,7 @@ function render() {
       <div class="item row">
         <div>
           <span>${escapeHtml(x.description)}</span>
-          <div class="small">${formatDate(x.created_at)}</div>
+          <div class="small">${x.type === "income" ? "Received" : "Paid / expected"}: ${formatDate(x.transaction_date || x.created_at)}</div>
         </div>
         <b>${x.type === "income" ? "+" : "−"}${formatMoney(
           x.amount,
@@ -674,7 +773,8 @@ function render() {
       <div class="item row">
         <div>
           <b>${escapeHtml(x.description)}</b>
-          <div class="small">${formatDate(x.created_at)}</div>
+          <div class="small">${x.type === "income" ? "Date received" : "Date paid / expected"}: ${formatDate(x.transaction_date || x.created_at)}</div>
+          <div class="small">Entered: ${formatDate(x.created_at)}</div>
           <div class="small">
             ${escapeHtml(x.category || "General")} · ${escapeHtml(x.type)}
           </div>
@@ -954,7 +1054,7 @@ $("spaceSelect").onchange = async e => {
 
 // CREATE HOUSEHOLD
 
-$("newHousehold").onclick = async () => {
+async function createHousehold() {
   const name = prompt("Name your household", "Our home");
   if (name === null) return;
   const cleanName = name.trim();
@@ -964,10 +1064,12 @@ $("newHousehold").onclick = async () => {
     return;
   }
 
-  const button = $("newHousehold");
-  const originalLabel = button.textContent;
-  button.disabled = true;
-  button.textContent = "Creating…";
+  const buttons = [$("newHousehold"), $("createHouseholdFromTab")].filter(Boolean);
+  const buttonLabels = buttons.map(button => button.textContent);
+  buttons.forEach(button => {
+    button.disabled = true;
+    button.textContent = "Creating…";
+  });
   message("Creating your household…");
 
   try {
@@ -1001,12 +1103,21 @@ $("newHousehold").onclick = async () => {
     message("Household creation failed: " + detail, "err");
     alert("MINTLY couldn't create the household:\n\n" + detail);
   } finally {
-    button.disabled = false;
-    button.textContent = originalLabel;
+    buttons.forEach((button, index) => {
+      button.disabled = false;
+      button.textContent = buttonLabels[index];
+    });
   }
-};
+}
+
+$("newHousehold").onclick = createHousehold;
+$("createHouseholdFromTab").onclick = createHousehold;
 
 // ADD TRANSACTION
+
+$("txDate").value = localDateValue();
+updateTransactionDateLabel();
+$("txType").addEventListener("change", updateTransactionDateLabel);
 
 $("txForm").onsubmit = async ev => {
   ev.preventDefault();
@@ -1039,6 +1150,7 @@ $("txForm").onsubmit = async ev => {
       amount: Number($("txAmount").value),
       description: $("txDescription").value,
       category: $("txCategory").value || "General",
+      transaction_date: $("txDate").value || localDateValue(),
       currency,
       fx_rates: snapshot
     });
@@ -1046,6 +1158,7 @@ $("txForm").onsubmit = async ev => {
     if (r?.error) throw r.error;
 
     ev.target.reset();
+    $("txDate").value = localDateValue();
 
     if (!r?.offline) await loadData();
 

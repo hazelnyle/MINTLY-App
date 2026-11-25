@@ -27,7 +27,7 @@ The browser app uses the Supabase publishable/anon key only. Never place a `serv
 
 Open Supabase SQL Editor and run `supabase/schema.sql`.
 
-The current starter schema is at `schema.sql` in the repository root. Run it in the Supabase SQL Editor for a new project. For an existing project, do not rerun destructive SQL; apply the additive migration `supabase/migrations/20261124_add_currency_fields.sql` to add the currency fields used by the app while preserving existing rows. Test with two separate accounts before launch.
+The current starter schema is at `schema.sql` in the repository root. Run it in the Supabase SQL Editor for a new project. For an existing project, do not rerun destructive SQL. Apply the additive migrations in `supabase/migrations/` in date order using the Supabase SQL Editor. The 20261124 migration adds currency fields; the 20261125 migration adds transaction dates (backfilled from each record's original entry date) and owner-only household deletion. These migrations preserve existing transaction records. Test with two separate accounts before launch.
 
 ## 3. Household invitations
 
